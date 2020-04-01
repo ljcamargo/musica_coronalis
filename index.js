@@ -7,7 +7,8 @@ const moment = require('moment');
 const MidiWriter = require('midi-writer-js');
 
 const notes = './notes.csv';
-const url = 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv';
+const confirmedUrl = 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv';
+const deathsUrl = 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv'
 
 const remoteFile = url => rp(url).catch(err => console.log(err));
 const remoteFileStream = (url, done) => remoteFile(url)
@@ -34,90 +35,93 @@ const remoteWholeCSV = (url, done) => remoteFileStream(url, stream => wholeCSV(s
 
 const localWholeCSV = (uri, done) => wholeCSV(fs.createReadStream(uri), done);
 
-const toMidiTrack = data => {
+const toMidiTrack = (data, name, instrument) => {
+	const days = 90;
+	const hours = 24; //before 16;
+	const divisor = 64;
+	const duration = '16';
 	const track = new MidiWriter.Track();
+	track.addTrackName(name);
+	track.addEvent(new MidiWriter.ProgramChangeEvent({instrument: instrument || 1}));
 	const missing = [];
-	Array(90).fill().map((_, i) => {
-		console.log("epoch " + i);
-		Array(16).fill().map((_, ii) => {
-			console.log("time " + ii);
+	Array(days).fill().map((_, i) => {
+		Array(hours).fill().map((_, ii) => {
 			const notes = [];
 			data.forEach((row, j) => {
-				const count = Math.round(parseInt(row[i]) / 64) || 0;
+				const count = Math.round(parseInt(row[i]) / divisor) || 0;
 				if (i in row && count > 0) {
-					//console.log(`cases ${row['Country/Region']} @${count} vs ${ii}`);
 					if (count > ii) {
 						if (row.note == undefined && missing.indexOf(row['Country/Region'])==-1) missing.push(row['Country/Region']);
 						if (row.note) {
 							console.log(`midi note event pitch ${i}:${ii} -> ${count}/${count - ii} ${row['Country/Region']} ${row.note}`);
 							notes.push(row.note);
-							//notes.push(new MidiWriter.NoteEvent({pitch:[`${row.note}`], duration: '8'}));
 						}
 					}
 				}
 			});
 			if (notes.length > 0) {
 				console.log(`exporting epoch ${i} ${notes.length}`);
-				const event = new MidiWriter.NoteEvent({pitch:notes, duration: '16'});
+				const event = new MidiWriter.NoteEvent({pitch:notes, duration: duration});
 				track.addEvent([event], (event, index) => {sequential: false});
 			}
 		});
 	});
-	//console.log("missing");
-	//console.log(missing);
 	return track;
 };
 
-const writeTrack = (track, file) => {
+const writeTrack = (tracks, file) => {
 	const stream = fs.createWriteStream(file);
-	const write = new MidiWriter.Writer(track);
-	//console.log(write.buildFile());
-	fs.writeFile(file, write.base64(), 'base64', err => {
-		console.log(err);
-	});
+	const write = new MidiWriter.Writer(tracks);
+	fs.writeFile(file, write.base64(), 'base64', err => console.log(err || "Done!"));
 };
 
-localWholeCSV(notes, allNotes => {
-	remoteWholeCSV(url, allData => {
-		const xChina = {
-			"Province/State": null,
-			"Country/Region": 'XChina',
-			"Lat": null,
-			"Long": null	
-		};
-		allData.forEach(row => {
-			if (row['Country/Region'] == "China") {
-				Object.keys(row).forEach((key, i) => {
-					if (!isNaN(row[key])) {
-						if (!(key in xChina)) {
-							xChina[key] = parseInt(row[key]);
-						} else {
-							xChina[key] = xChina[key] +parseInt(row[key]);
-						}
-					}
-				});
-			}
-		});
-		allData.push[xChina];
-		const post = allData.map(row => {
-			const match = allNotes.find(item => item.country == row['Country/Region']);
-			if (match) row.note = match.note;
-			const start = moment('1/22/20', 'MM/DD/YY');
+const sumRegions = (name, arr) => {
+	const region = {
+		"Province/State": null, "Country/Region": name, "Lat": null, "Long": null	
+	};
+	arr.forEach(row => {
+		if (row['Country/Region'] == name) {
 			Object.keys(row).forEach((key, i) => {
-				const re = /^(0?[1-9]|1[012])[\/\-](0?[1-9]|[12][0-9]|3[01])[\/\-]\d{2}$/
-				if (key.match(re)) {
-					const date = moment(key, 'MM/DD/YY');
-					const delta = date.diff(start, 'days');
-					const val = row[key];
-					delete row[key];
-					row[delta] = val;
+				if (!isNaN(row[key])) {
+					if (!(key in region)) {
+						region[key] = parseInt(row[key]);
+					} else {
+						region[key] = region[key] +parseInt(row[key]);
+					}
 				}
 			});
-			return row;
-		});
-		const track = toMidiTrack(post);
-		writeTrack(track, 'ouput.mid');
-		
+		}
+	});
+	arr = arr.filter(row => row['Country/Region'] != name);
+	arr.push[region];
+	return arr;
+}
+
+const transformDates = (notes, row) => {
+	const match = notes.find(item => item.country == row['Country/Region']);
+	if (match) row.note = match.note;
+	const start = moment('1/22/20', 'MM/DD/YY');
+	Object.keys(row).forEach((key, i) => {
+		const re = /^(0?[1-9]|1[012])[\/\-](0?[1-9]|[12][0-9]|3[01])[\/\-]\d{2}$/
+		if (key.match(re)) {
+			const date = moment(key, 'MM/DD/YY');
+			const delta = date.diff(start, 'days');
+			const val = row[key];
+			delete row[key];
+			row[delta] = val;
+		}
+	});
+	return row;
+};
+
+const transformArray = (notes, arr) => {
+	return sumRegions('China', arr).map(row => transformDates(notes, row));
+};
+
+localWholeCSV(notes, notes => {
+	remoteWholeCSV(confirmedUrl, confirmed => {
+		const confirmedTrack = toMidiTrack(transformArray(notes, confirmed), 'Confirmed Cases', 1);
+		writeTrack([confirmedTrack], 'output.mid');
 	});
 });
 
