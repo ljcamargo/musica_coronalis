@@ -120,8 +120,11 @@ const transformArray = (notes, arr) => {
 
 localWholeCSV(notes, notes => {
 	remoteWholeCSV(confirmedUrl, confirmed => {
-		const confirmedTrack = toMidiTrack(transformArray(notes, confirmed), 'Confirmed Cases', 1);
-		writeTrack([confirmedTrack], 'output.mid');
+		remoteWholeCSV(deathsUrl, deaths => {
+			const deathsTrack = toMidiTrack(transformArray(notes, deaths), 'Deaths', 9);
+			const confirmedTrack = toMidiTrack(transformArray(notes, confirmed), 'Confirmed Cases', 1);
+			writeTrack([confirmedTrack], 'output.mid');
+		});
 	});
 });
 
