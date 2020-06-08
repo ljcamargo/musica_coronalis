@@ -7,19 +7,27 @@ const moment = require('moment');
 const MidiWriter = require('midi-writer-js');
 
 const notes = './notes.csv';
-const confirmedUrl = 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv';
-const deathsUrl = 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv'
+
+const config = {
+	days: 90,
+	hours: 24,
+	divisor: 64,
+	duration: '16',
+	confirmedUrl: 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv',
+	confirmedInstrument: 1,
+	deathsUrl: 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv',
+	deathsInstrument: 9,
+	output: 'output.mid'
+};
 
 const remoteFile = url => rp(url).catch(err => console.log(err));
 const remoteFileStream = (url, done) => remoteFile(url)
 	.then(response => {
-		//console.log("response" + response);
 		const stream = new Readable();
 		done(stream);
 		stream._read = () => {};
 		stream.push(response);
 		stream.push(null); 
-		//stream.pipe(csv.parse({ headers: true }));
 	});
 
 const wholeCSV = (stream, done) => {
@@ -36,10 +44,7 @@ const remoteWholeCSV = (url, done) => remoteFileStream(url, stream => wholeCSV(s
 const localWholeCSV = (uri, done) => wholeCSV(fs.createReadStream(uri), done);
 
 const toMidiTrack = (data, name, instrument) => {
-	const days = 90;
-	const hours = 24; //before 16;
-	const divisor = 64;
-	const duration = '16';
+	const {days, hours, divisor, duration} = config
 	const track = new MidiWriter.Track();
 	track.addTrackName(name);
 	track.addEvent(new MidiWriter.ProgramChangeEvent({instrument: instrument || 1}));
@@ -119,11 +124,12 @@ const transformArray = (notes, arr) => {
 };
 
 localWholeCSV(notes, notes => {
+	const {confirmedUrl, deathsUrl, confirmedInstrument, deathsInstrument, output} = config;
 	remoteWholeCSV(confirmedUrl, confirmed => {
 		remoteWholeCSV(deathsUrl, deaths => {
-			const deathsTrack = toMidiTrack(transformArray(notes, deaths), 'Deaths', 9);
-			const confirmedTrack = toMidiTrack(transformArray(notes, confirmed), 'Confirmed Cases', 1);
-			writeTrack([confirmedTrack], 'output.mid');
+			const deathsTrack = toMidiTrack(transformArray(notes, deaths), 'Deaths', deathsInstrument);
+			const confirmedTrack = toMidiTrack(transformArray(notes, confirmed), 'Confirmed', confirmedInstrument);
+			writeTrack([confirmedTrack], output);
 		});
 	});
 });
