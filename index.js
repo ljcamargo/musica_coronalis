@@ -6,8 +6,6 @@ const through2 = require('through2');
 const moment = require('moment');
 const MidiWriter = require('midi-writer-js');
 
-const notes = './notes.csv';
-
 const config = {
 	days: 90,
 	hours: 24,
@@ -17,31 +15,42 @@ const config = {
 	confirmedInstrument: 1,
 	deathsUrl: 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv',
 	deathsInstrument: 9,
+	input: './notes.csv',
 	output: 'output.mid'
 };
 
-const remoteFile = url => rp(url).catch(err => console.log(err));
-const remoteFileStream = (url, done) => remoteFile(url)
-	.then(response => {
-		const stream = new Readable();
-		done(stream);
-		stream._read = () => {};
-		stream.push(response);
-		stream.push(null); 
-	});
-
-const wholeCSV = (stream, done) => {
-	const whole = [];
-	stream
-		.pipe(csv.parse({ headers: true }))
-		.on('error', error => console.log(error))
-	    .on('data', row => whole.push(row))
-		.on('end', () => done(whole));
+const remoteFile = async url => {
+	let result
+	try {
+		result = await rp(url)
+	} catch(e) {
+		console.log(e);
+	}
+	return result
 }
 
-const remoteWholeCSV = (url, done) => remoteFileStream(url, stream => wholeCSV(stream, done));
+const remoteFileStream = async (url) => {
+	const response = await remoteFile(url)
+	const stream = new Readable();
+	stream._read = () => {};
+	stream.push(response);
+	stream.push(null);
+	return stream; 
+}
 
-const localWholeCSV = (uri, done) => wholeCSV(fs.createReadStream(uri), done);
+const wholeCSV = async (stream) => {
+	const whole = [];
+	return new Promise((resolve, reject) =>{
+		stream
+			.pipe(csv.parse({ headers: true }))
+			.on('error', error => reject())
+		    .on('data', row => whole.push(row))
+			.on('end', () => resolve(whole));
+	});
+}
+
+const remoteWholeCSV = async (url) => await wholeCSV(await remoteFileStream(url));
+const localWholeCSV = async (uri) => await wholeCSV(fs.createReadStream(uri));
 
 const toMidiTrack = (data, name, instrument) => {
 	const {days, hours, divisor, duration} = config
@@ -119,18 +128,19 @@ const transformDates = (notes, row) => {
 	return row;
 };
 
-const transformArray = (notes, arr) => {
-	return sumRegions('China', arr).map(row => transformDates(notes, row));
-};
+const transformArray = (notes, arr) => sumRegions('China', arr).map(row => transformDates(notes, row));
 
-localWholeCSV(notes, notes => {
-	const {confirmedUrl, deathsUrl, confirmedInstrument, deathsInstrument, output} = config;
-	remoteWholeCSV(confirmedUrl, confirmed => {
-		remoteWholeCSV(deathsUrl, deaths => {
-			const deathsTrack = toMidiTrack(transformArray(notes, deaths), 'Deaths', deathsInstrument);
-			const confirmedTrack = toMidiTrack(transformArray(notes, confirmed), 'Confirmed', confirmedInstrument);
-			writeTrack([confirmedTrack], output);
-		});
-	});
-});
+(async () => {
+	const {confirmedUrl, deathsUrl, confirmedInstrument, deathsInstrument, output, input} = config;
+	const notes = await localWholeCSV(input);
+	const confirmed = await remoteWholeCSV(confirmedUrl);
+	const deaths = await remoteWholeCSV(deathsUrl);
+	console.log("confirmed " + confirmed);
+	console.log("deaths " + deaths);
+	const deathsTrack = toMidiTrack(transformArray(notes, deaths), 'Deaths', deathsInstrument);
+	const confirmedTrack = toMidiTrack(transformArray(notes, confirmed), 'Confirmed', confirmedInstrument);
+	writeTrack([confirmedTrack], output);
+})()
+
+
 
