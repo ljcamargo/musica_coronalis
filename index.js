@@ -7,8 +7,10 @@ const moment = require('moment');
 const MidiWriter = require('midi-writer-js');
 const program = require('commander');
 
+const COUNTRY = "Country/Region"
+
 const config = {
-	days: 90,
+	days: 60,
 	hours: 24,
 	divisor: 64,
 	duration: '16',
@@ -54,33 +56,35 @@ const remoteWholeCSV = async (url) => await wholeCSV(await remoteFileStream(url)
 const localWholeCSV = async (uri) => await wholeCSV(fs.createReadStream(uri));
 
 const toMidiTrack = (data, name, instrument) => {
-	const {days, hours, divisor, duration} = config
-	const track = new MidiWriter.Track();
-	track.addTrackName(name);
-	track.addEvent(new MidiWriter.ProgramChangeEvent({instrument: instrument || 1}));
+	const {days, hours, divisor, duration} = config;
 	const missing = [];
-	Array(days).fill().map((_, i) => {
-		Array(hours).fill().map((_, ii) => {
-			const notes = [];
-			data.forEach((row, j) => {
-				const count = Math.round(parseInt(row[i]) / divisor) || 0;
-				if (i in row && count > 0) {
-					if (count > ii) {
-						if (row.note == undefined && missing.indexOf(row['Country/Region'])==-1) missing.push(row['Country/Region']);
-						if (row.note) {
-							console.log(`midi note event pitch ${i}:${ii} -> ${count}/${count - ii} ${row['Country/Region']} ${row.note}`);
-							notes.push(row.note);
-						}
+	const instants = [];
+	Array(days).fill().map((day, dayNumber) => {
+		instants.push(...Array(hours).fill().map((hour, hourNumber) => {
+			return data.map(row => {
+				const country = row[COUNTRY];
+				const dayCount = parseInt(row[dayNumber]) || 0;
+				const count = Math.round(dayCount / divisor);
+				if (dayNumber in row && count > hourNumber > 0) {
+					if (!row.note && !missing.includes(country)) {
+						missing.push(country);
+					}
+					if (row.note) {
+						console.log(`pitch ${dayNumber}:${hourNumber} -> ${count}/${count - hourNumber} ${country} ${row.note}`);
+						return row.note
 					}
 				}
-			});
-			if (notes.length > 0) {
-				console.log(`exporting epoch ${i} ${notes.length}`);
-				const event = new MidiWriter.NoteEvent({pitch:notes, duration: duration});
-				track.addEvent([event], (event, index) => {sequential: false});
-			}
-		});
+			}).filter(it => it);
+		}));
 	});
+	const events = instants.filter(it => it.length > 0).map((notes, epoch) => {
+		console.log(`exporting epoch ${epoch} ${notes.length}`);
+		return new MidiWriter.NoteEvent({pitch:notes, duration: duration});
+	});
+	const track = new MidiWriter.Track();
+	track.addTrackName(name);
+	track.addEvent(new MidiWriter.ProgramChangeEvent({instrument: instrument || 1 }));
+	track.addEvent(events, (event, index) => {sequential: false});
 	return track;
 };
 
@@ -95,7 +99,7 @@ const sumRegions = (name, arr) => {
 		"Province/State": null, "Country/Region": name, "Lat": null, "Long": null	
 	};
 	arr.forEach(row => {
-		if (row['Country/Region'] == name) {
+		if (row[COUNTRY] == name) {
 			Object.keys(row).forEach((key, i) => {
 				if (!isNaN(row[key])) {
 					if (!(key in region)) {
@@ -107,13 +111,13 @@ const sumRegions = (name, arr) => {
 			});
 		}
 	});
-	arr = arr.filter(row => row['Country/Region'] != name);
+	arr = arr.filter(row => row[COUNTRY] != name);
 	arr.push[region];
 	return arr;
 }
 
 const transformDates = (notes, row) => {
-	const match = notes.find(item => item.country == row['Country/Region']);
+	const match = notes.find(item => item.country == row[COUNTRY]);
 	if (match) row.note = match.note;
 	const start = moment('1/22/20', 'MM/DD/YY');
 	Object.keys(row).forEach((key, i) => {
