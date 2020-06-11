@@ -5,6 +5,7 @@ const { Readable } = require('stream');
 const through2 = require('through2');
 const moment = require('moment');
 const MidiWriter = require('midi-writer-js');
+const program = require('commander');
 
 const config = {
 	days: 90,
@@ -141,6 +142,15 @@ const transformArray = (notes, arr) => sumRegions('China', arr).map(row => trans
 	const confirmedTrack = toMidiTrack(transformArray(notes, confirmed), 'Confirmed', confirmedInstrument);
 	writeTrack([confirmedTrack], output);
 })()
+
+/*program
+    .arguments('[midi]')
+	.option('-i, --input <input>', 'Input File')
+    .option('-o, --output <output>', 'Output File')
+    .action((midi) => {
+		  
+    })
+    .parse(process.argv);*/
 
 
 
