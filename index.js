@@ -10,10 +10,10 @@ const program = require('commander');
 const COUNTRY = "Country/Region"
 
 const config = {
-	days: 60,
-	hours: 24,
+	days: 120,
+	hours: 48,
 	divisor: 64,
-	duration: '16',
+	duration: '8',
 	confirmedUrl: 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv',
 	confirmedInstrument: 1,
 	deathsUrl: 'https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv',
